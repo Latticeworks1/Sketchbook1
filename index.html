@@ -9,6 +9,16 @@
 	<script src="build/sketchbook.min.js"></script>
 	<script>
 		const world = new Sketchbook.World('build/assets/world.glb');
+
+		const mp = new Sketchbook.MultiplayerClient(window.location.origin, world, {
+			syncInterval: 50,
+			debug: true,
+		});
+		mp.onConnected    = ()     => console.log('[MP] connected as', mp.self?.name);
+		mp.onDisconnected = ()     => console.log('[MP] disconnected');
+		mp.onPeerJoined   = (peer) => console.log('[MP] peer joined:', peer.name);
+		mp.onPeerLeft     = (id)   => console.log('[MP] peer left:', id);
+		mp.connect();
 	</script>
 </body>
 

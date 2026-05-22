@@ -39,6 +39,7 @@ export class Character extends THREE.Object3D implements IWorldEntity
 	public materials: THREE.Material[] = [];
 	public mixer: THREE.AnimationMixer;
 	public animations: any[];
+	public currentAnimationName: string = 'idle';
 
 	// Movement
 	public acceleration: THREE.Vector3 = new THREE.Vector3();
@@ -500,7 +501,6 @@ export class Character extends THREE.Object3D implements IWorldEntity
 	{
 		if (this.mixer !== undefined)
 		{
-			// gltf
 			let clip = THREE.AnimationClip.findByName( this.animations, clipName );
 
 			let action = this.mixer.clipAction(clip);
@@ -513,6 +513,7 @@ export class Character extends THREE.Object3D implements IWorldEntity
 			this.mixer.stopAllAction();
 			action.fadeIn(fadeIn);
 			action.play();
+			this.currentAnimationName = clipName;
 
 			return action.getClip().duration;
 		}
@@ -948,15 +949,18 @@ export class Character extends THREE.Object3D implements IWorldEntity
 			// Register physics
 			world.physicsWorld.addBody(this.characterCapsule.body);
 
-			// Add to graphicsWorld
-			world.graphicsWorld.add(this);
-			world.graphicsWorld.add(this.raycastBox);
-
-			// Shadow cascades
-			this.materials.forEach((mat) =>
+			if (!world.headless)
 			{
-				world.sky.csm.setupMaterial(mat);
-			});
+				// Add to graphicsWorld
+				world.graphicsWorld.add(this);
+				world.graphicsWorld.add(this.raycastBox);
+
+				// Shadow cascades
+				this.materials.forEach((mat) =>
+				{
+					world.sky.csm.setupMaterial(mat);
+				});
+			}
 		}
 	}
 
@@ -968,7 +972,7 @@ export class Character extends THREE.Object3D implements IWorldEntity
 		}
 		else
 		{
-			if (world.inputManager.inputReceiver === this)
+			if (world.inputManager && world.inputManager.inputReceiver === this)
 			{
 				world.inputManager.inputReceiver = undefined;
 			}
@@ -981,9 +985,12 @@ export class Character extends THREE.Object3D implements IWorldEntity
 			// Remove physics
 			world.physicsWorld.remove(this.characterCapsule.body);
 
-			// Remove visuals
-			world.graphicsWorld.remove(this);
-			world.graphicsWorld.remove(this.raycastBox);
+			if (!world.headless)
+			{
+				// Remove visuals
+				world.graphicsWorld.remove(this);
+				world.graphicsWorld.remove(this.raycastBox);
+			}
 		}
 	}
 }

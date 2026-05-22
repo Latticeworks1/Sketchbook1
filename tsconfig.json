@@ -2,13 +2,19 @@
     "include": [
         "src/ts/**/*"
     ],
+    "exclude": [
+        "src/ts/__tests__"
+    ],
     "compilerOptions": {
         "module": "commonjs",
         "target": "es5",
+        "lib": ["es5", "es2015", "dom"],
+        "skipLibCheck": true,
         "moduleResolution": "node",
         "declaration": true,
         "declarationDir": "build/types",
         "baseUrl": ".",
+        "types": ["jquery", "lodash"],
         "paths": {
             "cannon" : ["src/lib/cannon/cannon"]
         }

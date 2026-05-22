@@ -63,65 +63,86 @@ export class World
 	public paths: Path[] = [];
 	public scenarioGUIFolder: any;
 	public updatables: IUpdatable[] = [];
+	public headless: boolean;
+	public tick: number = 0;
+	public vehiclePuppetCallback: (() => void) | undefined;
 
 	private lastScenarioID: string;
 
-	constructor(worldScenePath?: any)
+	constructor(worldScenePath?: any, headless: boolean = false)
 	{
 		const scope = this;
+		this.headless = headless;
 
-		// WebGL not supported
-		if (!Detector.webgl)
-		{
-			Swal.fire({
-				icon: 'warning',
-				title: 'WebGL compatibility',
-				text: 'This browser doesn\'t seem to have the required WebGL capabilities. The application may not work correctly.',
-				footer: '<a href="https://get.webgl.org/" target="_blank">Click here for more information</a>',
-				showConfirmButton: false,
-				buttonsStyling: false
-			});
-		}
+		// Params defaults — always set so update() can read them safely
+		this.params = {
+			Pointer_Lock: true,
+			Mouse_Sensitivity: 0.3,
+			Time_Scale: 1,
+			Shadows: true,
+			FXAA: true,
+			Debug_Physics: false,
+			Debug_FPS: false,
+			Sun_Elevation: 50,
+			Sun_Rotation: 145,
+		};
 
-		// Renderer
-		this.renderer = new THREE.WebGLRenderer();
-		this.renderer.setPixelRatio(window.devicePixelRatio);
-		this.renderer.setSize(window.innerWidth, window.innerHeight);
-		this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-		this.renderer.toneMappingExposure = 1.0;
-		this.renderer.shadowMap.enabled = true;
-		this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-
-		this.generateHTML();
-
-		// Auto window resize
-		function onWindowResize(): void
-		{
-			scope.camera.aspect = window.innerWidth / window.innerHeight;
-			scope.camera.updateProjectionMatrix();
-			scope.renderer.setSize(window.innerWidth, window.innerHeight);
-			fxaaPass.uniforms['resolution'].value.set(1 / (window.innerWidth * pixelRatio), 1 / (window.innerHeight * pixelRatio));
-			scope.composer.setSize(window.innerWidth * pixelRatio, window.innerHeight * pixelRatio);
-		}
-		window.addEventListener('resize', onWindowResize, false);
-
-		// Three.js scene
+		// Three.js scene — always (loadScene uses graphicsWorld for scene graph)
 		this.graphicsWorld = new THREE.Scene();
-		this.camera = new THREE.PerspectiveCamera(80, window.innerWidth / window.innerHeight, 0.1, 1010);
 
-		// Passes
-		let renderPass = new RenderPass( this.graphicsWorld, this.camera );
-		let fxaaPass = new ShaderPass( FXAAShader );
+		if (!headless)
+		{
+			// WebGL not supported
+			if (!Detector.webgl)
+			{
+				Swal.fire({
+					icon: 'warning',
+					title: 'WebGL compatibility',
+					text: 'This browser doesn\'t seem to have the required WebGL capabilities. The application may not work correctly.',
+					footer: '<a href="https://get.webgl.org/" target="_blank">Click here for more information</a>',
+					showConfirmButton: false,
+					buttonsStyling: false
+				});
+			}
 
-		// FXAA
-		let pixelRatio = this.renderer.getPixelRatio();
-		fxaaPass.material['uniforms'].resolution.value.x = 1 / ( window.innerWidth * pixelRatio );
-		fxaaPass.material['uniforms'].resolution.value.y = 1 / ( window.innerHeight * pixelRatio );
+			// Renderer
+			this.renderer = new THREE.WebGLRenderer();
+			this.renderer.setPixelRatio(window.devicePixelRatio);
+			this.renderer.setSize(window.innerWidth, window.innerHeight);
+			this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+			this.renderer.toneMappingExposure = 1.0;
+			this.renderer.shadowMap.enabled = true;
+			this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-		// Composer
-		this.composer = new EffectComposer( this.renderer );
-		this.composer.addPass( renderPass );
-		this.composer.addPass( fxaaPass );
+			this.generateHTML();
+
+			this.camera = new THREE.PerspectiveCamera(80, window.innerWidth / window.innerHeight, 0.1, 1010);
+
+			// Passes
+			let renderPass = new RenderPass( this.graphicsWorld, this.camera );
+			let fxaaPass = new ShaderPass( FXAAShader );
+
+			// FXAA
+			let pixelRatio = this.renderer.getPixelRatio();
+			fxaaPass.material['uniforms'].resolution.value.x = 1 / ( window.innerWidth * pixelRatio );
+			fxaaPass.material['uniforms'].resolution.value.y = 1 / ( window.innerHeight * pixelRatio );
+
+			// Composer
+			this.composer = new EffectComposer( this.renderer );
+			this.composer.addPass( renderPass );
+			this.composer.addPass( fxaaPass );
+
+			// Auto window resize
+			const onWindowResize = (): void =>
+			{
+				scope.camera.aspect = window.innerWidth / window.innerHeight;
+				scope.camera.updateProjectionMatrix();
+				scope.renderer.setSize(window.innerWidth, window.innerHeight);
+				fxaaPass.uniforms['resolution'].value.set(1 / (window.innerWidth * pixelRatio), 1 / (window.innerHeight * pixelRatio));
+				scope.composer.setSize(window.innerWidth * pixelRatio, window.innerHeight * pixelRatio);
+			};
+			window.addEventListener('resize', onWindowResize, false);
+		}
 
 		// Physics
 		this.physicsWorld = new CANNON.World();
@@ -142,16 +163,19 @@ export class World
 		this.sinceLastFrame = 0;
 		this.justRendered = false;
 
-		// Stats (FPS, Frame time, Memory)
-		this.stats = Stats();
-		// Create right panel GUI
-		this.createParamsGUI(scope);
+		if (!headless)
+		{
+			// Stats (FPS, Frame time, Memory)
+			this.stats = Stats();
+			// Create right panel GUI (overwrites this.params with same defaults + wires up dat.GUI)
+			this.createParamsGUI(scope);
 
-		// Initialization
-		this.inputManager = new InputManager(this, this.renderer.domElement);
-		this.cameraOperator = new CameraOperator(this, this.camera, this.params.Mouse_Sensitivity);
-		this.sky = new Sky(this);
-		
+			// Initialization
+			this.inputManager = new InputManager(this, this.renderer.domElement);
+			this.cameraOperator = new CameraOperator(this, this.camera, this.params.Mouse_Sensitivity);
+			this.sky = new Sky(this);
+		}
+
 		// Load scene if path is supplied
 		if (worldScenePath !== undefined)
 		{
@@ -159,18 +183,21 @@ export class World
 			loadingManager.onFinishedCallback = () =>
 			{
 				this.update(1, 1);
-				this.setTimeScale(1);
-	
-				Swal.fire({
-					title: 'Welcome to Sketchbook!',
-					text: 'Feel free to explore the world and interact with available vehicles. There are also various scenarios ready to launch from the right panel.',
-					footer: '<a href="https://github.com/swift502/Sketchbook" target="_blank">GitHub page</a><a href="https://discord.gg/fGuEqCe" target="_blank">Discord server</a>',
-					confirmButtonText: 'Okay',
-					buttonsStyling: false,
-					onClose: () => {
-						UIManager.setUserInterfaceVisible(true);
-					}
-				});
+				if (!headless)
+				{
+					this.setTimeScale(1);
+
+					Swal.fire({
+						title: 'Welcome to Sketchbook!',
+						text: 'Feel free to explore the world and interact with available vehicles. There are also various scenarios ready to launch from the right panel.',
+						footer: '<a href="https://github.com/swift502/Sketchbook" target="_blank">GitHub page</a><a href="https://discord.gg/fGuEqCe" target="_blank">Discord server</a>',
+						confirmButtonText: 'Okay',
+						buttonsStyling: false,
+						onClose: () => {
+							UIManager.setUserInterfaceVisible(true);
+						}
+					});
+				}
 			};
 			loadingManager.loadGLTF(worldScenePath, (gltf) =>
 				{
@@ -178,7 +205,7 @@ export class World
 				}
 			);
 		}
-		else
+		else if (!headless)
 		{
 			UIManager.setUserInterfaceVisible(true);
 			UIManager.setLoadingScreenVisible(false);
@@ -190,25 +217,34 @@ export class World
 			});
 		}
 
-		this.render(this);
+		if (!headless)
+		{
+			this.render(this);
+		}
 	}
 
 	// Update
 	// Handles all logic updates.
 	public update(timeStep: number, unscaledTimeStep: number): void
 	{
+		this.tick++;
 		this.updatePhysics(timeStep);
+
+		// Let multiplayer override puppeted vehicle bodies before entity updates read them
+		if (this.vehiclePuppetCallback) this.vehiclePuppetCallback();
 
 		// Update registred objects
 		this.updatables.forEach((entity) => {
 			entity.update(timeStep, unscaledTimeStep);
 		});
 
-		// Lerp time scale
-		this.params.Time_Scale = THREE.MathUtils.lerp(this.params.Time_Scale, this.timeScaleTarget, 0.2);
-
-		// Physics debug
-		if (this.params.Debug_Physics) this.cannonDebugRenderer.update();
+		if (!this.headless)
+		{
+			// Lerp time scale
+			this.params.Time_Scale = THREE.MathUtils.lerp(this.params.Time_Scale, this.timeScaleTarget, 0.2);
+			// Physics debug
+			if (this.params.Debug_Physics) this.cannonDebugRenderer.update();
+		}
 	}
 
 	public updatePhysics(timeStep: number): void
@@ -265,6 +301,8 @@ export class World
 	 */
 	public render(world: World): void
 	{
+		if (this.headless) return;
+
 		this.requestDelta = this.clock.getDelta();
 
 		requestAnimationFrame(() =>
@@ -329,6 +367,30 @@ export class World
 		_.pull(this.updatables, registree);
 	}
 
+	public applySnapshot(snap: import('../core/Snapshot').WorldSnapshot): void
+	{
+		this.tick = snap.tick;
+		snap.chars.forEach((s) =>
+		{
+			const char = _.find(this.characters, (c) => c.id === s.id);
+			if (!char) return;
+
+			char.position.set(s.px, s.py, s.pz);
+			char.quaternion.set(s.qx, s.qy, s.qz, s.qw);
+
+			if (char.characterCapsule && char.characterCapsule.body)
+			{
+				const body = char.characterCapsule.body;
+				body.position.set(s.px, s.py, s.pz);
+				body.interpolatedPosition.set(s.px, s.py, s.pz);
+				body.quaternion.set(s.qx, s.qy, s.qz, s.qw);
+				body.interpolatedQuaternion.set(s.qx, s.qy, s.qz, s.qw);
+			}
+
+			if (!this.headless) char.setAnimation(s.state, 0.1);
+		});
+	}
+
 	public loadScene(loadingManager: LoadingManager, gltf: any): void
 	{
 		gltf.scene.traverse((child) => {
@@ -337,7 +399,7 @@ export class World
 				if (child.type === 'Mesh')
 				{
 					Utils.setupMeshProperties(child);
-					this.sky.csm.setupMaterial(child.material);
+					if (this.sky) this.sky.csm.setupMaterial(child.material);
 
 					if (child.material.name === 'ocean')
 					{
@@ -420,7 +482,7 @@ export class World
 	{
 		if (this.lastScenarioID !== undefined)
 		{
-			document.exitPointerLock();
+			if (!this.headless) document.exitPointerLock();
 			this.launchScenario(this.lastScenarioID);
 		}
 		else
@@ -463,6 +525,7 @@ export class World
 
 	public updateControls(controls: any): void
 	{
+		if (this.headless) return;
 		let html = '';
 		html += '<h2 class="controls-title">Controls:</h2>';
 

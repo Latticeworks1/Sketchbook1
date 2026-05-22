@@ -43,8 +43,11 @@ export declare class World {
     paths: Path[];
     scenarioGUIFolder: any;
     updatables: IUpdatable[];
+    headless: boolean;
+    tick: number;
+    vehiclePuppetCallback: (() => void) | undefined;
     private lastScenarioID;
-    constructor(worldScenePath?: any);
+    constructor(worldScenePath?: any, headless?: boolean);
     update(timeStep: number, unscaledTimeStep: number): void;
     updatePhysics(timeStep: number): void;
     isOutOfBounds(position: CANNON.Vec3): boolean;
@@ -61,6 +64,7 @@ export declare class World {
     registerUpdatable(registree: IUpdatable): void;
     remove(worldEntity: IWorldEntity): void;
     unregisterUpdatable(registree: IUpdatable): void;
+    applySnapshot(snap: import('../core/Snapshot').WorldSnapshot): void;
     loadScene(loadingManager: LoadingManager, gltf: any): void;
     launchScenario(scenarioID: string, loadingManager?: LoadingManager): void;
     restartScenario(): void;
